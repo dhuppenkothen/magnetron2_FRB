@@ -11,10 +11,13 @@ using namespace DNest4;
 const Data& MyModel::data = Data::get_instance();
 #include <iostream>
 
+// Initialise the static distribution
+const DNest4::Cauchy MyModel::cauchy(0.0, 1.0);
+
 MyModel::MyModel()
 :bursts(4, 100, false, MyConditionalPrior(data.get_t_min(), data.get_t_max(),
                 1E-10, 5.0*3.5e5*data.get_dt()))
-//,noise_normals(data.get_t().size())
+,noise_normals(data.get_t().size())
 ,mu(data.get_t().size())
 {
 
@@ -22,9 +25,7 @@ MyModel::MyModel()
 
 void MyModel::calculate_mu()
 {
-        // const vector<double>& t = data.get_t();
-        const vector<double>& t_left = data.get_t_left();
-        const vector<double>& t_right = data.get_t_right();
+        const vector<double>& t = data.get_t();
 
         // Update or from scratch?
         bool update = (bursts.get_added().size() < bursts.get_components().size());
@@ -63,35 +64,41 @@ void MyModel::calculate_mu()
                         // mu[i] += amplitude * 2 * pdf * cdf;
 
                         // FRED 
-                        if(tc <= t_left[i])
+                        if(tc <= t[i])
                         {
                                 // Bin to the right of peak
-                                mu[i] += amplitude*fall/data.get_dt()*
-                                                (exp((tc - t_left[i])/fall) -
-                                                 exp((tc - t_right[i])/fall));
+//                                mu[i] += amplitude*fall/data.get_dt()*
+//                                                (exp((tc - t_left[i])/fall) -
+//                                                 exp((tc - t_right[i])/fall));
+				mu[i] += amplitude*exp((tc - t[i])/fall);
+
                         }
-                        else if(tc >= t_right[i])
+                        else:
                         {
                                 // Bin to the left of peak
-                                mu[i] += -amplitude*rise/data.get_dt()*
-                                                (exp((t_left[i] - tc)/rise) -
-                                                 exp((t_right[i] - tc)/rise));
-                        }
-                        else
-                        {
-                                // Part to the left
-                                mu[i] += -amplitude*rise/data.get_dt()*
-                                                (exp((t_left[i] - tc)/rise) -
-                                                 1.);
-
-                                // Part to the right
-                                mu[i] += amplitude*fall/data.get_dt()*
-                                                (1. -
-                                                 exp((tc - t_right[i])/fall));
+//                                mu[i] += -amplitude*rise/data.get_dt()*
+//                                                (exp((t_left[i] - tc)/rise) -
+//                                                 exp((t_right[i] - tc)/rise));
+				mu[i] += amplitude*exp((t[i] - tc)/rise);
 
                         }
 
                 }
+
+        ynoise.assign(mu.size(), 0.0);
+
+        double alpha = exp(-1./noise_L);
+
+        for(size_t i=0; i<mu.size(); i++)
+        {
+                if(i==0)
+                        ynoise[i] = noise_sigma/sqrt(1. - alpha*alpha)*noise_normals[i];
+                else
+                        ynoise[i] = alpha*ynoise[i-1] + noise_sigma*noise_normals[i];
+                mu[i] *= exp(ynoise[i]);
+        }
+
+
 
         }
 
@@ -103,9 +110,9 @@ void MyModel::from_prior(RNG& rng)
 	background = exp(background);
 	bursts.from_prior(rng);
  
-//        noise_sigma = exp(log(1E-3) + log(1E3)*rng.rand());
-//        noise_L = exp(log(1E-2*Data::get_instance().get_t_range())
-//                        + log(1E3)*rng.rand());
+        noise_sigma = exp(log(1E-3) + log(1E3)*rng.rand());
+        noise_L = exp(log(1E-2*Data::get_instance().get_t_range())
+                        + log(1E3)*rng.rand());
 
         calculate_mu();
 
@@ -131,28 +138,28 @@ double MyModel::perturb(RNG& rng)
                         mu[i] += background;
         }
 
-//        else if(rng.rand() <= 0.5)
-//        {
-//                noise_sigma = log(noise_sigma);
-//                noise_sigma += log(1E3)*rng.randh();
-//                wrap(noise_sigma, log(1E-3), log(1.));
-//                noise_sigma = exp(noise_sigma);
-//
-//                noise_L = log(noise_L);
-//                noise_L += log(1E3)*rng.randh();
-//                wrap(noise_L, log(1E-2*Data::get_instance().get_t_range()), log(10.*Data::get_instance().get_t_range()));
-//                noise_L = exp(noise_L);
-//
-//                calculate_mu();
-//        }
+        else if(rng.rand() <= 0.5)
+        {
+                noise_sigma = log(noise_sigma);
+                noise_sigma += log(1E3)*rng.randh();
+                wrap(noise_sigma, log(1E-3), log(1.));
+                noise_sigma = exp(noise_sigma);
+
+                noise_L = log(noise_L);
+                noise_L += log(1E3)*rng.randh();
+                wrap(noise_L, log(1E-2*Data::get_instance().get_t_range()), log(10.*Data::get_instance().get_t_range()));
+                noise_L = exp(noise_L);
+
+                calculate_mu();
+        }
         else
         {
-//                int num = exp(log((double)noise_normals.size())*rng.rand());
-//                for(int i=0; i<num; i++)
-//                {
-//                        int k = rng.rand_int(noise_normals.size());
-//                        noise_normals[k] = rng.randn();
-//                }
+                int num = exp(log((double)noise_normals.size())*rng.rand());
+                for(int i=0; i<num; i++)
+                {
+                        int k = rng.rand_int(noise_normals.size());
+                        noise_normals[k] = rng.randn();
+                }
                 logH += bursts.perturb(rng);  
                 bursts.consolidate_diff();
 
@@ -178,8 +185,12 @@ double MyModel::log_likelihood() const
 
 void MyModel::print(std::ostream& out) const
 {
-        out<<background<<' ';
+        out<<background<<' '<<noise_sigma<<' '<<noise_L<<' ';
         bursts.print(out);
+
+        for(size_t i=0; i<mu.size(); i++)
+                out<<ynoise[i]<<' ';
+
         for(size_t i=0; i<mu.size(); i++)
                 out<<mu[i]<<' ';
 
