@@ -14,6 +14,7 @@ const Data& MyModel::data = Data::get_instance();
 // Initialise the static distribution
 const DNest4::Cauchy MyModel::cauchy(0.0, 1.0);
 
+//MyModel::MyModel()
 MyModel::MyModel()
 :bursts(4, 100, false, MyConditionalPrior(data.get_t_min(), data.get_t_max(),
                 1E-10, 5.0*3.5e5*data.get_dt()))
@@ -73,7 +74,7 @@ void MyModel::calculate_mu()
 				mu[i] += amplitude*exp((tc - t[i])/fall);
 
                         }
-                        else:
+                        else
                         {
                                 // Bin to the left of peak
 //                                mu[i] += -amplitude*rise/data.get_dt()*

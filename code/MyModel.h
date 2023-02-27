@@ -6,6 +6,7 @@
 #include <ostream>
 #include "Data.h"
 #include "DNest4/code/RJObject/RJObject.h"
+#include "DNest4/code/Distributions/Cauchy.h"
 #include <vector>
  
 class MyModel
@@ -25,7 +26,7 @@ class MyModel
 		DNest4::RJObject<MyConditionalPrior> bursts;
 		
 		// Extra white noise on teh Poisson rate
-/		std::vector<double> noise_normals;
+		std::vector<double> noise_normals;
 		double noise_sigma, noise_L;
 
 		// Poisson mean
